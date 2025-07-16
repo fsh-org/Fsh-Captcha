@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Panel - Fsh Captcha</title>
+    <meta name="description" content="Easy, free and private captcha service.">
+    <link rel="canonical" href="https://captcha.fsh.plus/panel">
+    <!-- ------- -->
+    <meta charset="UTF-8">
+    <meta name="robots" content="index, follow">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="https://fsh.plus/fsh.png" type="image/png">
+    <meta name="theme-color" content="#a89c9b">
+    <!-- ------- -->
+    <link rel="stylesheet" href="https://fsh.plus/media/style.css">
+    <script src="https://account.fsh.plus/script.js"></script>
+    <!-- ------- -->
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
+    <style>
+      body, #grid {
+        width: 100dvw;
+        height: 100dvh;
+      }
+      .ag-cell {
+        font-weight: 300;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="grid"></div>
+    <script>
+      const gridOptions = {
+        theme: agGrid.themeQuartz
+          .withPart(agGrid.colorSchemeDark)
+          .withParams({
+            fontFamily: 'Lexend, Arial, sans-serif',
+            headerFontFamily: 'Lexend, Arial, sans-serif',
+            cellFontFamily: 'Lexend, Arial, sans-serif',
+
+            accentColor: 'var(--blue-1)',
+            backgroundColor: 'var(--bg-1)'
+          }),
+        defaultColDef: {
+          flex: 1,
+        },
+        rowData: [
+          { make: "Tesla", model: "Model Y", price: 64950, electric: true },
+          { make: "Ford", model: "F-Series", price: 33850, electric: false },
+          { make: "Toyota", model: "Corolla", price: 29600, electric: false }
+        ],
+        columnDefs: [
+          { field: "make" },
+          { field: "model" },
+          { field: "price" },
+          { field: "electric" }
+        ]
+      };
+
+      agGrid.createGrid(document.getElementById('grid'), gridOptions);
+    </script>
+  </body>
+</html>
