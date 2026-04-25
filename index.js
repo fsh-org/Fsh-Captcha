@@ -1,8 +1,8 @@
 // Packages
-const express = require('express');
 const bodyParser = require('body-parser');
+const path = require('node:path');
+const express = require('express');
 const cors = require('cors');
-const htms = require('server-htms');
 
 const DB = require('fshdb');
 const svgCaptcha = require('svg-captcha');
@@ -14,23 +14,31 @@ let nanoid;
 })();
 
 // Options
-const providerKeyLength = 10;
-const captchaIDLength = 12;
+const providerKeyLength = 12;
+const captchaIDLength = 16;
 const captchaExpire = 2 * 60 * 1000; // 2 mins
-const captchaGoodExpire = 5 * 60 * 1000; // 5 mins
-const captchaTextBackground = '#181818';
+const verifiedIDLength = 16;
+const verifiedExpire = 2 * 60 * 1000; // 2 mins
 const cleanupTime = 10 * 60 *1000; // 10 mins
+const captchaTextBase = {
+  width: 300,
+  height: 100,
+  noise: 4,
+  color: true,
+  background: '#181818'
+};
 
 // DBs
 const providers = new DB('databases/providers.json', { compact: true });
 const captchaStore = new Map(); // In memory
-const captchaGoodStore = new Map(); // In memory
+const verifiedStore = new Map(); // In memory
 
 setInterval(()=>{
   let now = Date.now();
   [...captchaStore.entries()]
-    .filter(([key, value]) => value.expires<now)
-    .forEach(([key, value]) => captchaStore.delete(key));
+    .forEach(([key, value]) => value.expires<now?captchaStore.delete(key):null);
+  [...verifiedStore.entries()]
+    .forEach(([key, value]) => value<now?captchaStore.delete(key):null);
 }, cleanupTime)
 
 /* Errors */
@@ -68,25 +76,27 @@ const app = express();
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use(htms);
 
 // Static resources
 app.use('/media', express.static('media'));
 
 // Main pages
 app.get('/', async function(req, res) {
-  res.htms('pages/index.html');
+  res.sendFile(path.join(__dirname, './pages/index.html'));
+});
+app.get('/widget.js', async function(req, res) {
+  res.sendFile(path.join(__dirname, './pages/widget.js'));
+});
+app.get('/test', async function(req, res) {
+  res.sendFile(path.join(__dirname, './pages/test.html'));
 });
 
 app.get('/panel', async function(req, res) {
   if (!await getUser(req)) {
-    res.htms('pages/login.html');
+    res.sendFile(path.join(__dirname, './pages/login.html'));
   } else {
-    res.htms('pages/panel.html');
+    res.sendFile(path.join(__dirname, './pages/panel.html'));
   }
-});
-app.get('/tpanel', async function(req, res) {
-  res.htms('pages/panel.html');
 });
 
 // API V1
@@ -100,44 +110,56 @@ app.get('/api/v1/captcha', (req, res) => {
     });
     return;
   }
-  let prov = providers.get(key);
 
-  // Get method
-  let method = prov.method;
+  let prov = providers.get(key);
   let site = req.query['site'];
-  if (site) {
-    try {
-      site = new URL(site);
-      site = prov.override[site.hostname];
-      if (site) method = site;
-    } catch(err) {
-      // Ignore
-    }
+  if (!site) {
+    res.status(400);
+    res.json({
+      err: true,
+      msg: 'Site required'
+    });
+    return;
+  }
+  try {
+    site = new URL(site);
+  } catch(err) {
+    res.status(400);
+    res.json({
+      err: true,
+      msg: 'Site invalid'
+    });
+    return;
+  }
+  if (!prov.domains[site.hostname]) {
+    res.status(400);
+    res.json({
+      err: true,
+      msg: 'Site / provider missmatch'
+    });
+    return;
   }
 
   // Generate
+  let method = prov.domains[site.hostname];
   const captchaId = nanoid(captchaIDLength);
   let data = { image: '', result: '', input: '' };
   let captcha;
-  switch(method) {
+  switch(method.method) {
     case 'text':
       captcha = svgCaptcha.create({
-        size: 6,
-        noise: 4,
-        color: true,
-        background: captchaTextBackground,
-        ignoreChars: '0oO1ilI'
+        ...captchaTextBase,
+        size: method.length,
+        ignoreChars: '0oO1lLI'
       });
       data = { image: captcha.data, result: captcha.text, input: 'text' };
       break;
     case 'math':
       captcha = svgCaptcha.createMathExpr({
-        mathMin: 1,
-        mathMax: 20,
-        mathOperator: '+-',
-        noise: 4,
-        color: true,
-        background: captchaTextBackground
+        ...captchaTextBase,
+        mathMin: method.min,
+        mathMax: method.max,
+        mathOperator: method.operators
       });
       data = { image: captcha.data, result: captcha.text, input: 'text' };
       break;
@@ -157,12 +179,9 @@ app.get('/api/v1/captcha', (req, res) => {
 });
 
 app.post('/api/v1/verify', (req, res) => {
-  let id;
-  let input;
-  try {
-    id = req.body['id'];
-    input = req.body['input'];
-  } catch(err) {
+  let id = req.body['id'];
+  let input = req.body['input'];
+  if (!id || !input) {
     res.status(400);
     res.json({
       err: true,
@@ -170,8 +189,8 @@ app.post('/api/v1/verify', (req, res) => {
     });
     return;
   }
-  const stored = captchaStore.get(id);
 
+  const stored = captchaStore.get(id);
   if (!stored || Date.now() > stored.expires) {
     res.status(400);
     res.json({
@@ -182,25 +201,32 @@ app.post('/api/v1/verify', (req, res) => {
   }
 
   const match = stored.result.toLowerCase() === input.toLowerCase();
-  providers.set(stored.provider+'.'+(match?'good':'bad'), providers.get(stored.provider+'.'+(match?'good':'bad'))+1)
+  providers.push(stored.provider+'.requests', {
+    passed: match,
+    telemetry: {
+      ua: req.headers['user-agent']
+    }
+  });
   captchaStore.delete(id);
 
-  if (match) captchaGoodStore.set(id, Date.now()+captchaGoodExpire);
+  if (!match) {
+    res.json({ success: false });
+    return;
+  }
 
-  res.json({ success: match });
+  let verid = nanoid(verifiedIDLength);
+  verifiedStore.set(verid, Date.now()+verifiedExpire);
+
+  res.json({ success: true, verid });
 });
-
 app.get('/api/v1/check', (req, res) => {
-  const id = req.query['id'];
-  const stored = captchaGoodStore.get(id);
-
-  res.json({ success: !!stored });
+  res.json({ verified: verifiedStore.has(req.query('id')||'') });
 });
 
 // 404
 app.use(function(req, res) {
   res.status(404);
-  res.htms('pages/404.html');
+  res.sendFile(path.join(__dirname, './pages/404.html'));
 });
 
 // Listen
