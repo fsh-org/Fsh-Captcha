@@ -1,5 +1,6 @@
 // Packages
 const bodyParser = require('body-parser');
+const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const cors = require('cors');
@@ -94,9 +95,11 @@ app.get('/test', async function(req, res) {
 app.get('/panel', async function(req, res) {
   if (!await getUser(req)) {
     res.sendFile(path.join(__dirname, './pages/login.html'));
-  } else {
-    res.sendFile(path.join(__dirname, './pages/panel.html'));
+    return;
   }
+  let provider = 'catcatcatcat';
+  res.send(fs.readFileSync(path.join(__dirname, 'pages', 'panel.html'), 'utf8')
+    .replace('{data}', JSON.stringify(providers.get(provider+'.requests'))));
 });
 
 // API V1
@@ -121,17 +124,7 @@ app.get('/api/v1/captcha', (req, res) => {
     });
     return;
   }
-  try {
-    site = new URL(site);
-  } catch(err) {
-    res.status(400);
-    res.json({
-      err: true,
-      msg: 'Site invalid'
-    });
-    return;
-  }
-  if (!prov.domains[site.hostname]) {
+  if (!prov.domains[site]) {
     res.status(400);
     res.json({
       err: true,
@@ -141,7 +134,7 @@ app.get('/api/v1/captcha', (req, res) => {
   }
 
   // Generate
-  let method = prov.domains[site.hostname];
+  let method = prov.domains[site];
   const captchaId = nanoid(captchaIDLength);
   let data = { image: '', result: '', input: '' };
   let captcha;
@@ -203,9 +196,9 @@ app.post('/api/v1/verify', (req, res) => {
   const match = stored.result.toLowerCase() === input.toLowerCase();
   providers.push(stored.provider+'.requests', {
     passed: match,
-    telemetry: {
-      ua: req.headers['user-agent']
-    }
+    domain: req.header('origin').replace(/https?:\/\//i,''),
+    ua: req.header('user-agent'),
+    when: Date.now()
   });
   captchaStore.delete(id);
 

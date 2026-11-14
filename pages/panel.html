@@ -17,17 +17,65 @@
     <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
     <style>
       body, #grid {
-        width: 100dvw;
         height: 100dvh;
       }
       .ag-cell {
         font-weight: 300;
       }
+      .pie {
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        background: conic-gradient(var(--green-1) 0% var(--per), var(--red-1) 0% 100%);
+      }
     </style>
   </head>
   <body>
+    <h2>Stats</h2>
+    <div class="stats">
+      <div>
+        <p id="success-top">Success</p>
+        <div class="pie" id="success-chart"></div>
+      </div>
+    </div>
+    <h2>Latest solves</h2>
     <div id="grid"></div>
     <script>
+      const dateFormat = params=>(params.value===null?'':new Date(params.value).toLocaleString(navigator, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
+      class tickRender {
+        eGui;
+        init(params) {
+          this.eGui = document.createElement('span');
+          this.eGui.innerText = params.value?'✔':'✘';
+          this.eGui.setAttribute('style', `color: var(--${params.value?'green':'red'}-1); display: flex; justify-content: center; align-items: center; height: 100%;`);
+        }
+        getGui() {
+          return this.eGui;
+        }
+        refresh(params) {
+          return false;
+        }
+      }
+
+      let data = {data};
+      data = data
+        .map(line=>{
+          line.os = line.ua.includes('Windows')?line.ua.split(';')[0].split('(')[1]:
+            /Android/i.test(line.ua)?line.ua.match(/(Android( [0-9]+)?)/i)[0]:
+            line.ua.includes('CrOS')?'ChromeOS':
+            (line.ua.match(/Linux|iPhone|iPad|iPod|AppleTV|Mac/i)||['Unknown'])[0];
+          line.browser = /Edg(e|a|ios)?\//i.test(line.ua)?'Edge':
+            line.ua.includes('OPR/')?'Opera':
+            line.ua.includes('YaBrowser/')?'Yandex':
+            line.ua.includes('Trident/')?'Internet Explorer':
+            (line.ua.match(/(Vivaldi|Chrome|Firefox|Safari)\/[0-9]+/i)||['Unknown'])[0].replace('/',' ');
+          return line;
+        });
+
+      let success = (data.filter(line=>line.passed).length/data.length*100).toFixed(2)+'%';
+      document.getElementById('success-top').innerText = `Success - ${success}`;
+      document.getElementById('success-chart').style.setProperty('--per', success);
+
       const gridOptions = {
         theme: agGrid.themeQuartz
           .withPart(agGrid.colorSchemeDark)
@@ -39,19 +87,29 @@
             accentColor: 'var(--blue-1)',
             backgroundColor: 'var(--bg-1)'
           }),
-        defaultColDef: {
-          flex: 1,
-        },
-        rowData: [
-          { make: "Tesla", model: "Model Y", price: 64950, electric: true },
-          { make: "Ford", model: "F-Series", price: 33850, electric: false },
-          { make: "Toyota", model: "Corolla", price: 29600, electric: false }
-        ],
+        rowData: data,
         columnDefs: [
-          { field: "make" },
-          { field: "model" },
-          { field: "price" },
-          { field: "electric" }
+          { field: 'domain', flex: 1, filter: true },
+          {
+            field: 'passed',
+            width: 100,
+            filter: true,
+            cellRenderer: tickRender
+          },
+          { field: 'os', width: 200, filter: true },
+          { field: 'browser', width: 200, filter: true },
+          { field: 'ua', flex: 1, filter: true },
+          {
+            field: 'when',
+            width: 200,
+            sort: 'desc',
+            filter: 'agDateColumnFilter',
+            filterParams: {
+              includeTime: true,
+              maxValidDate: new Date()
+            },
+            valueFormatter: dateFormat
+          }
         ]
       };
 

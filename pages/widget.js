@@ -1,7 +1,30 @@
+if (!import.meta.url) throw new Error('Must be loaded as module');
+if (/function toString() {(\n   )? [native code]( |\n)}/.test(Function.prototype.toString.toString())) throw new Error('Tampered');
+if (/function toString() {(\n   )? [native code]( |\n)}/.test(Object.prototype.toString.toString())) throw new Error('Tampered');
+if (/function define() {(\n   )? [native code]( |\n)}/.test(customElements.define.toString())) throw new Error('Tampered');
+if (/function getOwnPropertyNames() {(\n   )? [native code]( |\n)}/.test(Object.getOwnPropertyNames.toString())) throw new Error('Tampered');
+
+const globalMatch = /playwright|puppeteer|selenium|phantom|nightmare|webdriver/i;
+function selfReport() {
+  let globals = Object.getOwnPropertyNames(window);
+  return navigator.webdriver||
+    document.documentElement.getAttribute('selenium')!==null||
+    document.documentElement.getAttribute('webdriver')!==null||
+    globals.some(global=>globalMatch.test(global));
+}
+function inconsistency() {
+  return (navigator.userAgent.includes('Chrome/')&&!window.chrome)||
+    !(navigator.plugins instanceof PluginArray)||
+    navigator.appName!=='Netscape'||
+    navigator.appCodeName!=='Mozilla';
+}
+
+let defaultLang = 'en';
 class CaptchaElement extends HTMLElement {
+  #inner;
   constructor() {
     super();
-    this.__inner = null;
+    this.#inner = null;
     this.strings = {
       en: {
         notrobot: 'I am not a robot',
@@ -14,7 +37,6 @@ class CaptchaElement extends HTMLElement {
         answer: 'Respuesta'
       }
     };
-    let defaultLang = 'en';
     this.lang = navigator.languages.map(lang=>lang.split('-')[0]).filter(lang=>Object.keys(this.strings).includes(lang))[0]??defaultLang;
   }
   connectedCallback() {
@@ -23,8 +45,8 @@ class CaptchaElement extends HTMLElement {
   newCaptcha() {
     let key = this.getAttribute('data-key');
     if (!key) throw new Error('Missing data-key');
-    this.__inner ??= this.attachShadow({ mode: 'closed' });
-    this.__inner.innerHTML = `<style>
+    this.#inner ??= this.attachShadow({ mode: 'closed' });
+    this.#inner.innerHTML = `<style>
 *, :host { box-sizing: border-box }
 :host {
   display: flex;
@@ -138,13 +160,18 @@ class CaptchaElement extends HTMLElement {
   <span>Fsh Captcha</span>
   <a>${this.strings[this.lang].privacy}</a>
 </div>`;
-    let box = this.__inner.querySelector('.box');
-    let input = this.__inner.querySelector('input');
+    let box = this.#inner.querySelector('.box');
+    let input = this.#inner.querySelector('input');
     input.onchange = ()=>{
       box.innerText = '';
       box.style.color = 'var(--tone-4)';
       input.disabled = true;
-      fetch(`https://captcha.fsh.plus/api/v1/captcha?key=${encodeURIComponent(this.getAttribute('data-key'))}&site=${encodeURIComponent(location.href)}`)
+      if (selfReport()||inconsistency()) {
+        box.innerText = '✘';
+        box.style.color = 'var(--red)';
+        return;
+      }
+      fetch(`https://captcha.fsh.plus/api/v1/captcha?key=${encodeURIComponent(this.getAttribute('data-key'))}&site=${encodeURIComponent(location.hostname)}`)
         .then(res=>res.json())
         .then(res=>{
           let modal = document.createElement('div');
@@ -152,7 +179,7 @@ class CaptchaElement extends HTMLElement {
           modal.classList.add('modal');
           modal.style.top = bounds.top+bounds.height+'px';
           modal.style.left = bounds.left+'px';
-          this.__inner.appendChild(modal);
+          this.#inner.appendChild(modal);
           if (res.input==='text') {
             modal.innerHTML = `${res.image}
 <div>
@@ -182,7 +209,12 @@ class CaptchaElement extends HTMLElement {
                   box.innerText = bad?'✘':'✔';
                   box.style.color = `var(--${bad?'red':'green'})`;
                   input.disabled = !bad;
-                  if (bad) return;
+                })
+                .catch(err=>{
+                  box.classList.remove('load');
+                  box.innerText = '✘';
+                  box.style.color = 'var(--red)';
+                  input.disabled = false;
                 });
             };
           }
