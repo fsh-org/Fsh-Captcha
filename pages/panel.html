@@ -68,7 +68,7 @@
             line.ua.includes('OPR/')?'Opera':
             line.ua.includes('YaBrowser/')?'Yandex':
             line.ua.includes('Trident/')?'Internet Explorer':
-            (line.ua.match(/(Vivaldi|Chrome|Firefox|Safari)\/[0-9]+/i)||['Unknown'])[0].replace('/',' ');
+            (line.ua.match(/(Vivaldi|Chrome|Firefox|Safari|Ladybird)\/[0-9]+/i)||['Unknown'])[0].replace('/',' ');
           return line;
         });
 
